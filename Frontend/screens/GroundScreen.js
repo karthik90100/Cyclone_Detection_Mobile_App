@@ -92,7 +92,7 @@ export default function GroundScreen() {
             formData.append("lat", location.lat.toString());
             formData.append("lon", location.lon.toString());
 
-            const res = await fetch("http://192.168.0.120:5000/predict", {
+            const res = await fetch("https://cyclone-detection-mobile-app.onrender.com/predict", {
                 method: "POST",
                 body: formData,
             });

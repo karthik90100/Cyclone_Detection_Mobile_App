@@ -40,7 +40,7 @@ export default function SatelliteScreen() {
                 type: "image/jpeg",
             });
 
-            const res = await fetch("http://192.168.0.120:5000/predict-satellite", {
+            const res = await fetch("https://cyclone-detection-mobile-app.onrender.com/predict-satellite", {
                 method: "POST",
                 body: formData,
             });
