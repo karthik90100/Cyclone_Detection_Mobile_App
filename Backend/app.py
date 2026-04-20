@@ -12,61 +12,95 @@ app = Flask(__name__)
 CORS(app)
 
 # ==============================
-# 🔥 MODEL SETUP
+# 🔥 PATHS
 # ==============================
 
-## 📡 Download Satellite Model
 SAT_MODEL_PATH = "cyclone_detection_model.keras"
-
-if not os.path.exists(SAT_MODEL_PATH):
-    print("Downloading satellite model...")
-
-    url = "https://drive.google.com/uc?export=download&id=1cI6MyyUXhz14jNavYqQQdoSeRYKhHWHb"
-    r = requests.get(url, timeout=60)
-
-    if r.status_code == 200:
-        with open(SAT_MODEL_PATH, "wb") as f:
-            f.write(r.content)
-        print("Satellite model downloaded ✅")
-    else:
-        print("Satellite model download failed ❌")
-
-# Load model
-satellite_model = tf.keras.models.load_model(SAT_MODEL_PATH)
-# ☁️ Cloud Model
-model = Sequential([
-    Input(shape=(224, 224, 3)),
-    Conv2D(32, (3,3), activation='relu'),
-    MaxPooling2D(2,2),
-
-    Conv2D(64, (3,3), activation='relu'),
-    MaxPooling2D(2,2),
-
-    Conv2D(128, (3,3), activation='relu'),
-    MaxPooling2D(2,2),
-
-    Flatten(),
-    Dense(128, activation='relu'),
-    Dense(5, activation='softmax')
-])
 MODEL_PATH = "cloud.weights.h5"
 
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model...")
+satellite_model = None
+cloud_model = None
 
-    url = "https://drive.google.com/uc?export=download&id=1Vw3wiyGVLWAJYbUBFcuFZ_Mu4B2UfZ6k"
-    r = requests.get(url, timeout=60)
+# ==============================
+# 📥 GOOGLE DRIVE DOWNLOAD FIX
+# ==============================
 
-    if r.status_code == 200:
-        with open(MODEL_PATH, "wb") as f:
-            f.write(r.content)
-        print("Download complete ✅")
-    else:
-        print("Download failed ❌")
+def download_file_from_google_drive(file_id, destination):
+    URL = "https://drive.google.com/uc?export=download"
+    session = requests.Session()
 
-model.load_weights(MODEL_PATH)
+    response = session.get(URL, params={"id": file_id}, stream=True)
 
-classes = ['VEIL CLOUDS', 'clear', 'pattern', 'thick dark', 'thick white']
+    # Handle large file confirmation
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            params = {"id": file_id, "confirm": value}
+            response = session.get(URL, params=params, stream=True)
+            break
+
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+# ==============================
+# 📡 LOAD SATELLITE MODEL (LAZY)
+# ==============================
+
+def load_satellite_model():
+    global satellite_model
+
+    if satellite_model is None:
+        if not os.path.exists(SAT_MODEL_PATH):
+            print("Downloading satellite model...")
+            download_file_from_google_drive(
+                "1cI6MyyUXhz14jNavYqQQdoSeRYKhHWHb",
+                SAT_MODEL_PATH
+            )
+
+        if os.path.getsize(SAT_MODEL_PATH) < 1000000:
+            raise Exception("Satellite model corrupted ❌")
+
+        satellite_model = tf.keras.models.load_model(SAT_MODEL_PATH)
+        print("Satellite model loaded ✅")
+
+# ==============================
+# ☁️ LOAD CLOUD MODEL (LAZY)
+# ==============================
+
+def load_cloud_model():
+    global cloud_model
+
+    if cloud_model is None:
+        if not os.path.exists(MODEL_PATH):
+            print("Downloading cloud model...")
+            download_file_from_google_drive(
+                "1Vw3wiyGVLWAJYbUBFcuFZ_Mu4B2UfZ6k",
+                MODEL_PATH
+            )
+
+        if os.path.getsize(MODEL_PATH) < 1000000:
+            raise Exception("Cloud model corrupted ❌")
+
+        model = Sequential([
+            Input(shape=(224, 224, 3)),
+            Conv2D(32, (3,3), activation='relu'),
+            MaxPooling2D(2,2),
+
+            Conv2D(64, (3,3), activation='relu'),
+            MaxPooling2D(2,2),
+
+            Conv2D(128, (3,3), activation='relu'),
+            MaxPooling2D(2,2),
+
+            Flatten(),
+            Dense(128, activation='relu'),
+            Dense(5, activation='softmax')
+        ])
+
+        model.load_weights(MODEL_PATH)
+        cloud_model = model
+        print("Cloud model loaded ✅")
 
 # ==============================
 # ☁️ IMAGE VALIDATION
@@ -88,11 +122,11 @@ def is_cloud_image(img):
     return True
 
 # ==============================
-# 🌦️ WEATHER API FUNCTION
+# 🌦️ WEATHER API
 # ==============================
 
 def get_weather(lat, lon):
-    API_KEY = os.environ.get("API_KEY")  # ✅ FIXED
+    API_KEY = os.environ.get("API_KEY")
 
     if not API_KEY:
         return None
@@ -114,12 +148,12 @@ def get_weather(lat, lon):
     }
 
 # ==============================
-# 🏠 HOME ROUTE
+# 🏠 HOME
 # ==============================
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return "🚀 Cloud + Cyclone Detection API Running"
+    return "🚀 API Running Successfully"
 
 # ==============================
 # 🛰️ SATELLITE ROUTE
@@ -128,25 +162,20 @@ def home():
 @app.route("/predict-satellite", methods=["POST"])
 def predict_satellite():
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"})
+        load_satellite_model()
 
-        file = request.files["file"]
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "No file"})
 
-        img = Image.open(file).convert("RGB")
-        img = img.resize((150, 150))
-
-        img_array = np.array(img, dtype=np.float32) / 255.0
+        img = Image.open(file).convert("RGB").resize((150,150))
+        img_array = np.array(img)/255.0
         img_array = np.expand_dims(img_array, axis=0)
 
         prediction = float(satellite_model.predict(img_array, verbose=0)[0][0])
 
-        if prediction >= 0.5:
-            result = "No Cyclone"
-            confidence = prediction
-        else:
-            result = "Cyclone"
-            confidence = 1 - prediction
+        result = "No Cyclone" if prediction >= 0.5 else "Cyclone"
+        confidence = prediction if prediction >= 0.5 else 1 - prediction
 
         return jsonify({
             "prediction": result,
@@ -157,79 +186,53 @@ def predict_satellite():
         return jsonify({"error": str(e)})
 
 # ==============================
-# 🔮 MAIN PREDICTION
+# 🔮 MAIN ROUTE
 # ==============================
 
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"})
+        load_cloud_model()
 
-        file = request.files["file"]
-
+        file = request.files.get("file")
         lat = request.form.get("lat")
         lon = request.form.get("lon")
 
-        if not lat or not lon:
-            return jsonify({"error": "Location not provided"})
+        if not file or not lat or not lon:
+            return jsonify({"error": "Missing input"})
 
-        lat = float(lat)
-        lon = float(lon)
+        lat, lon = float(lat), float(lon)
 
-        img = Image.open(file).convert("RGB")
-        img = img.resize((224, 224))
+        img = Image.open(file).convert("RGB").resize((224,224))
 
         if not is_cloud_image(img):
-            return jsonify({
-                "prediction": "Invalid Image ❌",
-                "confidence": 0
-            })
+            return jsonify({"prediction": "Invalid Image", "confidence": 0})
 
-        img_array = np.array(img) / 255.0
+        img_array = np.array(img)/255.0
         img_array = np.expand_dims(img_array, axis=0)
 
-        prediction = model.predict(img_array)[0]
+        prediction = cloud_model.predict(img_array)[0]
         index = int(np.argmax(prediction))
         confidence = float(prediction[index]) * 100
 
+        classes = ['VEIL CLOUDS', 'clear', 'pattern', 'thick dark', 'thick white']
         result = classes[index]
 
         weather = get_weather(lat, lon)
 
-        if weather is None:
-            return jsonify({
-                "prediction": result,
-                "confidence": round(confidence, 2),
-                "error": "Weather API failed"
-            })
-
-        risk = "🟢 Safe"
-
-        if (
-            result.lower() in ["thick dark", "thick white"] and
-            weather["windSpeed"] > 15 and
-            weather["pressure"] < 1000
-        ):
-            risk = "🔴 Cyclone Risk"
-
-        elif weather["windSpeed"] > 10:
-            risk = "🟡 Storm Possible"
-
         return jsonify({
             "prediction": result,
             "confidence": round(confidence, 2),
-            "weather": weather,
-            "risk": risk
+            "weather": weather
         })
 
     except Exception as e:
         return jsonify({"error": str(e)})
 
 # ==============================
-# 🚀 RUN SERVER (FIXED)
+# 🚀 RUN
 # ==============================
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # ✅ FIXED
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
