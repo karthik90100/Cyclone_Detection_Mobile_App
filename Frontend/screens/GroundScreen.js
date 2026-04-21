@@ -82,9 +82,12 @@ export default function GroundScreen() {
 
             setLoading(true);
 
+            const imageUri = image.startsWith("file://") ? image : `file://${image}`;
+
             const formData = new FormData();
+
             formData.append("file", {
-                uri: image,
+                uri: imageUri,
                 name: "photo.jpg",
                 type: "image/jpeg",
             });
@@ -92,28 +95,53 @@ export default function GroundScreen() {
             formData.append("lat", location.lat.toString());
             formData.append("lon", location.lon.toString());
 
-            const res = await fetch("https://cyclone-detection-mobile-app.onrender.com/predict", {
-                method: "POST",
-                body: formData,
-            });
+            const res = await fetch(
+                "https://cyclone-detection-mobile-app.onrender.com/predict",
+                {
+                    method: "POST",
+                    body: formData,
+                }
+            );
+
+            // 🔥 HANDLE SERVER ERROR
+            if (!res.ok) {
+                const text = await res.text();
+                console.log("SERVER ERROR:", text);
+                alert("Server error");
+                return;
+            }
 
             const data = await res.json();
 
+            console.log("API RESPONSE:", data);
 
-            // 🚀 Navigate instead of showing here
+            // 🔥 IMPORTANT SAFETY CHECK
+            if (!data || !data.prediction) {
+                alert("Invalid response from server");
+                return;
+            }
+
+            // 🔥 HANDLE INVALID IMAGE CASE
+            if (data.prediction === "Invalid Image") {
+                alert("Please upload a valid cloud image");
+                return;
+            }
+            if (!data.weather) {
+                data.weather = {};
+            }
+
             navigation.navigate("Result", {
                 result: data,
-                location: location
+                location: location,
             });
 
         } catch (error) {
-            console.log(error);
+            console.log("ERROR:", error);
             alert("Something went wrong");
         } finally {
             setLoading(false);
         }
     };
-
     // 🚫 If location not allowed
     if (!locationGranted) {
         return (

@@ -14,12 +14,15 @@ export default function ResultScreen({ route }) {
         );
     }
 
-    const cyclone = result.risk || "Unknown";
+    const cyclone = result.prediction || "Unknown";
     const rain = result.weather?.condition || "Moderate";
 
     const getRiskColor = (risk) => {
-        if (risk?.toLowerCase().includes("cyclone")) return "#dc2626";
-        if (risk?.toLowerCase().includes("storm")) return "#ca8a04";
+        if (!risk) return "#16a34a";
+
+        if (risk.toLowerCase().includes("cyclone")) return "#dc2626";
+        if (risk.toLowerCase().includes("storm")) return "#ca8a04";
+
         return "#16a34a";
     };
 
@@ -84,7 +87,10 @@ export default function ResultScreen({ route }) {
 
                 <View style={styles.card}>
                     <Text style={styles.label}>💨 Wind</Text>
-                    <Text style={styles.value}>{result.weather?.windSpeed}</Text>
+                    <Text style={styles.value}>{result.weather?.windSpeed || "N/A"}</Text>
+                    <Text style={styles.value}>{result.weather?.humidity || "N/A"}%</Text>
+                    <Text style={styles.value}>{result.weather?.pressure || "N/A"}</Text>
+                    <Text style={styles.value}>{result.confidence || "N/A"}%</Text>
                 </View>
 
                 <View style={styles.card}>

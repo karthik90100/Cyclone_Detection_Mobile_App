@@ -16,7 +16,6 @@ MODEL_SERVER = "https://alfalfa-caption-email.ngrok-free.dev"
 # ==============================
 # ☁️ IMAGE VALIDATION
 # ==============================
-
 def is_cloud_image(img):
     img_np = np.array(img)
 
@@ -35,7 +34,6 @@ def is_cloud_image(img):
 # ==============================
 # 🌦️ WEATHER API
 # ==============================
-
 def get_weather(lat, lon):
     API_KEY = os.environ.get("API_KEY")
 
@@ -45,7 +43,7 @@ def get_weather(lat, lon):
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
 
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=10)
         if res.status_code != 200:
             return None
 
@@ -63,7 +61,6 @@ def get_weather(lat, lon):
 # ==============================
 # 🏠 HOME
 # ==============================
-
 @app.route("/")
 def home():
     return "🚀 API Running Successfully"
@@ -71,7 +68,6 @@ def home():
 # ==============================
 # 🛰️ SATELLITE ROUTE
 # ==============================
-
 @app.route("/predict-satellite", methods=["POST"])
 def predict_satellite():
     try:
@@ -80,10 +76,17 @@ def predict_satellite():
         if not file:
             return jsonify({"error": "No file"})
 
+        # Reset file pointer
+        file.seek(0)
+
         response = requests.post(
             f"{MODEL_SERVER}/satellite",
-            files={"file": file}
+            files={"file": file},
+            timeout=15
         )
+
+        if response.status_code != 200:
+            return jsonify({"error": "Model server error"})
 
         return jsonify(response.json())
 
@@ -93,7 +96,6 @@ def predict_satellite():
 # ==============================
 # 🔮 MAIN ROUTE (CLOUD + WEATHER)
 # ==============================
-
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
@@ -107,24 +109,38 @@ def predict():
         lat, lon = float(lat), float(lon)
 
         # Validate image
-        img = Image.open(file).convert("RGB").resize((224,224))
+        img = Image.open(file).convert("RGB").resize((224, 224))
+
         if not is_cloud_image(img):
-            return jsonify({"prediction": "Invalid Image", "confidence": 0})
+            return jsonify({
+                "prediction": "Invalid Image",
+                "confidence": 0
+            })
+
+        # Reset file pointer (VERY IMPORTANT)
+        file.seek(0)
 
         # Send to model server
         response = requests.post(
             f"{MODEL_SERVER}/cloud",
-            files={"file": file}
+            files={"file": file},
+            timeout=15
         )
 
+        if response.status_code != 200:
+            return jsonify({"error": "Model server error"})
+
         model_result = response.json()
+
+        prediction = model_result.get("prediction", "Unknown")
+        confidence = model_result.get("confidence", 0)
 
         # Get weather
         weather = get_weather(lat, lon)
 
         return jsonify({
-            "prediction": model_result.get("prediction"),
-            "confidence": model_result.get("confidence", 100),
+            "prediction": prediction,
+            "confidence": confidence,
             "weather": weather
         })
 
@@ -134,7 +150,6 @@ def predict():
 # ==============================
 # 🚀 RUN
 # ==============================
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
