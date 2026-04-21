@@ -3,104 +3,15 @@ import numpy as np
 from PIL import Image
 from flask_cors import CORS
 import requests
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense
 import os
 
 app = Flask(__name__)
 CORS(app)
 
 # ==============================
-# 🔥 PATHS
+# 🌐 MODEL SERVER (Colab ngrok URL)
 # ==============================
-
-SAT_MODEL_PATH = "cyclone_detection_model.keras"
-MODEL_PATH = "cloud.weights.h5"
-
-satellite_model = None
-cloud_model = None
-
-# ==============================
-# 📥 GOOGLE DRIVE DOWNLOAD FIX
-# ==============================
-
-def download_file_from_google_drive(file_id, destination):
-    URL = "https://drive.google.com/uc?export=download"
-    session = requests.Session()
-
-    response = session.get(URL, params={"id": file_id}, stream=True)
-
-    # Handle large file confirmation
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            params = {"id": file_id, "confirm": value}
-            response = session.get(URL, params=params, stream=True)
-            break
-
-    with open(destination, "wb") as f:
-        for chunk in response.iter_content(1024 * 1024):
-            if chunk:
-                f.write(chunk)
-
-# ==============================
-# 📡 LOAD SATELLITE MODEL (LAZY)
-# ==============================
-
-def load_satellite_model():
-    global satellite_model
-
-    if satellite_model is None:
-        if not os.path.exists(SAT_MODEL_PATH):
-            print("Downloading satellite model...")
-            download_file_from_google_drive(
-                "1cI6MyyUXhz14jNavYqQQdoSeRYKhHWHb",
-                SAT_MODEL_PATH
-            )
-
-        if os.path.getsize(SAT_MODEL_PATH) < 1000000:
-            raise Exception("Satellite model corrupted ❌")
-
-        satellite_model = tf.keras.models.load_model(SAT_MODEL_PATH)
-        print("Satellite model loaded ✅")
-
-# ==============================
-# ☁️ LOAD CLOUD MODEL (LAZY)
-# ==============================
-
-def load_cloud_model():
-    global cloud_model
-
-    if cloud_model is None:
-        if not os.path.exists(MODEL_PATH):
-            print("Downloading cloud model...")
-            download_file_from_google_drive(
-                "1Vw3wiyGVLWAJYbUBFcuFZ_Mu4B2UfZ6k",
-                MODEL_PATH
-            )
-
-        if os.path.getsize(MODEL_PATH) < 1000000:
-            raise Exception("Cloud model corrupted ❌")
-
-        model = Sequential([
-            Input(shape=(224, 224, 3)),
-            Conv2D(32, (3,3), activation='relu'),
-            MaxPooling2D(2,2),
-
-            Conv2D(64, (3,3), activation='relu'),
-            MaxPooling2D(2,2),
-
-            Conv2D(128, (3,3), activation='relu'),
-            MaxPooling2D(2,2),
-
-            Flatten(),
-            Dense(128, activation='relu'),
-            Dense(5, activation='softmax')
-        ])
-
-        model.load_weights(MODEL_PATH)
-        cloud_model = model
-        print("Cloud model loaded ✅")
+MODEL_SERVER = "https://alfalfa-caption-email.ngrok-free.dev"
 
 # ==============================
 # ☁️ IMAGE VALIDATION
@@ -133,19 +44,21 @@ def get_weather(lat, lon):
 
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
 
-    res = requests.get(url)
+    try:
+        res = requests.get(url)
+        if res.status_code != 200:
+            return None
 
-    if res.status_code != 200:
+        data = res.json()
+
+        return {
+            "windSpeed": data["wind"]["speed"],
+            "pressure": data["main"]["pressure"],
+            "humidity": data["main"]["humidity"],
+            "condition": data["weather"][0]["main"]
+        }
+    except:
         return None
-
-    data = res.json()
-
-    return {
-        "windSpeed": data["wind"]["speed"],
-        "pressure": data["main"]["pressure"],
-        "humidity": data["main"]["humidity"],
-        "condition": data["weather"][0]["main"]
-    }
 
 # ==============================
 # 🏠 HOME
@@ -162,38 +75,28 @@ def home():
 @app.route("/predict-satellite", methods=["POST"])
 def predict_satellite():
     try:
-        load_satellite_model()
-
         file = request.files.get("file")
+
         if not file:
             return jsonify({"error": "No file"})
 
-        img = Image.open(file).convert("RGB").resize((150,150))
-        img_array = np.array(img)/255.0
-        img_array = np.expand_dims(img_array, axis=0)
+        response = requests.post(
+            f"{MODEL_SERVER}/satellite",
+            files={"file": file}
+        )
 
-        prediction = float(satellite_model.predict(img_array, verbose=0)[0][0])
-
-        result = "No Cyclone" if prediction >= 0.5 else "Cyclone"
-        confidence = prediction if prediction >= 0.5 else 1 - prediction
-
-        return jsonify({
-            "prediction": result,
-            "confidence": round(confidence * 100, 2)
-        })
+        return jsonify(response.json())
 
     except Exception as e:
         return jsonify({"error": str(e)})
 
 # ==============================
-# 🔮 MAIN ROUTE
+# 🔮 MAIN ROUTE (CLOUD + WEATHER)
 # ==============================
 
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        load_cloud_model()
-
         file = request.files.get("file")
         lat = request.form.get("lat")
         lon = request.form.get("lon")
@@ -203,26 +106,25 @@ def predict():
 
         lat, lon = float(lat), float(lon)
 
+        # Validate image
         img = Image.open(file).convert("RGB").resize((224,224))
-
         if not is_cloud_image(img):
             return jsonify({"prediction": "Invalid Image", "confidence": 0})
 
-        img_array = np.array(img)/255.0
-        img_array = np.expand_dims(img_array, axis=0)
+        # Send to model server
+        response = requests.post(
+            f"{MODEL_SERVER}/cloud",
+            files={"file": file}
+        )
 
-        prediction = cloud_model.predict(img_array)[0]
-        index = int(np.argmax(prediction))
-        confidence = float(prediction[index]) * 100
+        model_result = response.json()
 
-        classes = ['VEIL CLOUDS', 'clear', 'pattern', 'thick dark', 'thick white']
-        result = classes[index]
-
+        # Get weather
         weather = get_weather(lat, lon)
 
         return jsonify({
-            "prediction": result,
-            "confidence": round(confidence, 2),
+            "prediction": model_result.get("prediction"),
+            "confidence": model_result.get("confidence", 100),
             "weather": weather
         })
 
