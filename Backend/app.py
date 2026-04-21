@@ -44,7 +44,9 @@ def get_weather(lat, lon):
 
     try:
         res = requests.get(url, timeout=10)
+
         if res.status_code != 200:
+            print("Weather API error:", res.text)
             return None
 
         data = res.json()
@@ -55,7 +57,9 @@ def get_weather(lat, lon):
             "humidity": data["main"]["humidity"],
             "condition": data["weather"][0]["main"]
         }
-    except:
+
+    except Exception as e:
+        print("Weather Exception:", str(e))
         return None
 
 # ==============================
@@ -66,7 +70,7 @@ def home():
     return "🚀 API Running Successfully"
 
 # ==============================
-# 🛰️ SATELLITE ROUTE
+# 🛰️ SATELLITE ROUTE (SAFE)
 # ==============================
 @app.route("/predict-satellite", methods=["POST"])
 def predict_satellite():
@@ -74,24 +78,44 @@ def predict_satellite():
         file = request.files.get("file")
 
         if not file:
-            return jsonify({"error": "No file"})
+            return jsonify({
+                "prediction": "Error",
+                "confidence": 0,
+                "weather": None
+            })
 
-        # Reset file pointer
         file.seek(0)
 
         response = requests.post(
             f"{MODEL_SERVER}/satellite",
             files={"file": file},
-            timeout=15
+            timeout=30
         )
 
         if response.status_code != 200:
-            return jsonify({"error": "Model server error"})
+            print("Satellite API error:", response.text)
+            return jsonify({
+                "prediction": "Error",
+                "confidence": 0,
+                "weather": None
+            })
 
-        return jsonify(response.json())
+        data = response.json()
+        print("Satellite Response:", data)
+
+        return jsonify({
+            "prediction": data.get("prediction", "Unknown"),
+            "confidence": data.get("confidence", 0),
+            "weather": None
+        })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        print("Satellite Exception:", str(e))
+        return jsonify({
+            "prediction": "Error",
+            "confidence": 0,
+            "weather": None
+        })
 
 # ==============================
 # 🔮 MAIN ROUTE (CLOUD + WEATHER)
@@ -104,7 +128,11 @@ def predict():
         lon = request.form.get("lon")
 
         if not file or not lat or not lon:
-            return jsonify({"error": "Missing input"})
+            return jsonify({
+                "prediction": "Error",
+                "confidence": 0,
+                "weather": None
+            })
 
         lat, lon = float(lat), float(lon)
 
@@ -114,28 +142,43 @@ def predict():
         if not is_cloud_image(img):
             return jsonify({
                 "prediction": "Invalid Image",
-                "confidence": 0
+                "confidence": 0,
+                "weather": None
             })
 
-        # Reset file pointer (VERY IMPORTANT)
+        # Reset file pointer
         file.seek(0)
 
-        # Send to model server
-        response = requests.post(
-            f"{MODEL_SERVER}/cloud",
-            files={"file": file},
-            timeout=15
-        )
+        # Call cloud model
+        try:
+            response = requests.post(
+                f"{MODEL_SERVER}/cloud",
+                files={"file": file},
+                timeout=30
+            )
+        except Exception as e:
+            print("Cloud API connection failed:", str(e))
+            return jsonify({
+                "prediction": "Error",
+                "confidence": 0,
+                "weather": None
+            })
 
         if response.status_code != 200:
-            return jsonify({"error": "Model server error"})
+            print("Cloud API error:", response.text)
+            return jsonify({
+                "prediction": "Error",
+                "confidence": 0,
+                "weather": None
+            })
 
         model_result = response.json()
+        print("Cloud Model Response:", model_result)
 
         prediction = model_result.get("prediction", "Unknown")
         confidence = model_result.get("confidence", 0)
 
-        # Get weather
+        # Weather data
         weather = get_weather(lat, lon)
 
         return jsonify({
@@ -145,7 +188,12 @@ def predict():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        print("Main Exception:", str(e))
+        return jsonify({
+            "prediction": "Error",
+            "confidence": 0,
+            "weather": None
+        })
 
 # ==============================
 # 🚀 RUN
