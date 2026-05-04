@@ -29,14 +29,23 @@ def download_file(url, filename):
 
     if not os.path.exists(filepath):
         print(f"⬇ Downloading {filename}...")
-        r = requests.get(url, stream=True)
 
-        if r.status_code != 200:
+        session = requests.Session()
+        response = session.get(url, stream=True)
+
+        # Handle Google Drive confirm page
+        for key, value in response.cookies.items():
+            if key.startswith("download_warning"):
+                confirm_url = url + "&confirm=" + value
+                response = session.get(confirm_url, stream=True)
+
+        if response.status_code != 200:
             raise Exception(f"Failed to download {filename}")
 
         with open(filepath, "wb") as f:
-            for chunk in r.iter_content(1024):
-                f.write(chunk)
+            for chunk in response.iter_content(1024):
+                if chunk:
+                    f.write(chunk)
 
         print(f"✅ Downloaded {filename}")
 
