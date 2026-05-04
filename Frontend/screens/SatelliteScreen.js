@@ -1,14 +1,27 @@
-import { View, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    Image,
+    ActivityIndicator,
+    ScrollView,
+    StyleSheet
+} from 'react-native';
+
+import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function SatelliteScreen() {
+
     const [image, setImage] = useState(null);
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
 
+    // 📷 Pick Image
     const pickImage = async () => {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
         if (!permission.granted) {
             alert("Permission required!");
             return;
@@ -20,10 +33,11 @@ export default function SatelliteScreen() {
 
         if (!res.canceled) {
             setImage(res.assets[0].uri);
-            setResult(null); // reset result
+            setResult(null);
         }
     };
 
+    // 🛰️ Detect Cyclone
     const detect = async () => {
         try {
             if (!image) {
@@ -40,10 +54,13 @@ export default function SatelliteScreen() {
                 type: "image/jpeg",
             });
 
-            const res = await fetch("https://cyclone-detection-mobile-app.onrender.com/predict-satellite", {
-                method: "POST",
-                body: formData,
-            });
+            const res = await fetch(
+                "http://192.168.0.120:5000/satellite",
+                {
+                    method: "POST",
+                    body: formData,
+                }
+            );
 
             const data = await res.json();
             setResult(data);
@@ -60,33 +77,54 @@ export default function SatelliteScreen() {
         <ScrollView style={styles.container}>
 
             {/* Title */}
-            <Text style={styles.title}>
-                🛰️ Satellite Detection
+            <Text style={styles.title}>CycloSense</Text>
+            <Text style={styles.subtitle}>
+                Satellite Cyclone Detection
             </Text>
 
             {/* Image Preview */}
-            <View style={styles.imageContainer}>
+            <View style={styles.card}>
                 {image ? (
                     <Image source={{ uri: image }} style={styles.image} />
                 ) : (
-                    <View style={styles.placeholder}>
-                        <Text style={styles.placeholderText}>No Image Selected</Text>
-                    </View>
+                    <Text style={styles.placeholderText}>
+                        🛰️ Select Satellite Image
+                    </Text>
                 )}
             </View>
 
             {/* Upload Button */}
-            <TouchableOpacity onPress={pickImage} style={styles.uploadBtn}>
-                <Text style={styles.btnText}>Upload Image</Text>
+            <TouchableOpacity onPress={pickImage}>
+                <LinearGradient
+                    colors={["#16a34a", "#22c55e"]}
+                    style={styles.gradientBtn}
+                >
+                    <Text style={styles.btnText}>Upload Image</Text>
+                </LinearGradient>
             </TouchableOpacity>
 
             {/* Detect Button */}
-            <TouchableOpacity onPress={detect} style={styles.detectBtn}>
-                <Text style={styles.btnText}>Detect Cyclone</Text>
+            <TouchableOpacity onPress={detect} disabled={!image}>
+                <LinearGradient
+                    colors={["#22c55e", "#4ade80"]}
+                    style={[
+                        styles.gradientBtn,
+                        { opacity: image ? 1 : 0.5 }
+                    ]}
+                >
+                    <Text style={styles.btnText}>Detect Cyclone</Text>
+                </LinearGradient>
             </TouchableOpacity>
 
             {/* Loading */}
-            {loading && <ActivityIndicator size="large" style={{ marginTop: 20 }} />}
+            {loading && (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#16a34a" />
+                    <Text style={styles.loadingText}>
+                        Processing satellite data...
+                    </Text>
+                </View>
+            )}
 
             {/* Result */}
             {result && (
@@ -100,70 +138,99 @@ export default function SatelliteScreen() {
                     </Text>
                 </View>
             )}
+
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
+
     container: {
         flex: 1,
-        backgroundColor: "#f3f4f6",
+        backgroundColor: "#ecfdf5",
         padding: 16,
     },
+
     title: {
-        fontSize: 24,
-        fontWeight: "bold",
+        fontSize: 28,
+        fontWeight: "700",
         textAlign: "center",
-        color: "#581c87",
+        color: "#065f46",
+        marginTop: 40,
     },
-    imageContainer: {
-        marginTop: 20,
+
+    subtitle: {
+        textAlign: "center",
+        color: "#16a34a",
+        marginBottom: 20,
+        fontSize: 14,
     },
-    image: {
-        height: 200,
-        width: "100%",
-        borderRadius: 15,
-    },
-    placeholder: {
-        height: 200,
-        backgroundColor: "#d1d5db",
-        borderRadius: 15,
+
+    card: {
+        backgroundColor: "#ffffff",
+        borderRadius: 28,
+        height: 220,
         justifyContent: "center",
         alignItems: "center",
+        marginBottom: 25,
+        borderWidth: 1,
+        borderColor: "#dcfce7",
+        elevation: 6,
     },
+
+    image: {
+        width: "100%",
+        height: "100%",
+        borderRadius: 28,
+    },
+
     placeholderText: {
-        color: "#4b5563",
+        color: "#16a34a",
+        fontSize: 16,
     },
-    uploadBtn: {
-        backgroundColor: "#2563eb",
-        padding: 15,
-        borderRadius: 10,
-        marginTop: 20,
+
+    gradientBtn: {
+        paddingVertical: 16,
+        borderRadius: 16,
+        marginVertical: 10,
+        alignItems: "center",
+        elevation: 6,
     },
-    detectBtn: {
-        backgroundColor: "#9333ea",
-        padding: 15,
-        borderRadius: 10,
-        marginTop: 10,
-    },
+
     btnText: {
-        color: "white",
-        textAlign: "center",
+        color: "#ffffff",
+        fontSize: 16,
         fontWeight: "600",
     },
-    resultCard: {
-        backgroundColor: "white",
-        padding: 15,
-        borderRadius: 15,
-        marginTop: 20,
+
+    loadingContainer: {
+        marginTop: 25,
+        alignItems: "center",
     },
+
+    loadingText: {
+        marginTop: 8,
+        color: "#065f46",
+    },
+
+    resultCard: {
+        backgroundColor: "#ffffff",
+        padding: 16,
+        borderRadius: 16,
+        marginTop: 20,
+        borderLeftWidth: 5,
+        borderLeftColor: "#16a34a",
+    },
+
     resultTitle: {
         fontSize: 16,
-        fontWeight: "bold",
-        color: "#1f2937",
+        fontWeight: "700",
+        color: "#065f46",
     },
+
     resultText: {
-        color: "#4b5563",
         marginTop: 5,
+        color: "#374151",
     },
+
 });

@@ -1,31 +1,64 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Speech from 'expo-speech';
+import { useEffect } from 'react';
 
 export default function HomeScreen({ navigation }) {
+
+    // 🔊 Auto voice when screen loads
+    useEffect(() => {
+        speakTelugu();
+
+        // Stop voice when leaving screen (important fix)
+        return () => {
+            Speech.stop();
+        };
+    }, []);
+
+    // 🎤 Telugu voice function
+    const speakTelugu = () => {
+        Speech.speak(
+            "సైక్లోసెన్స్ కు స్వాగతం. ఇది ఏఐ ఆధారిత తుఫాను గుర్తింపు యాప్.",
+            {
+                language: "te-IN",
+                pitch: 1.0,
+                rate: 0.9,
+            }
+        );
+    };
+
     return (
         <View style={styles.container}>
 
-            <Text style={styles.title}>
-                🌦️ Parjanya Cloud App
-            </Text>
+            {/* Title */}
+            <Text style={styles.title}>CycloSense</Text>
 
             <Text style={styles.subtitle}>
-                Detect Cyclones using Ground & Satellite Images
+                AI-Powered Cyclone Detection
             </Text>
 
-            {/* Go to Ground */}
-            <TouchableOpacity
-                style={styles.button}
-                onPress={() => navigation.navigate("Ground")}
-            >
-                <Text style={styles.buttonText}>Go to Ground Analysis</Text>
+            {/* Ground Button */}
+            <TouchableOpacity onPress={() => navigation.navigate("Ground")}>
+                <LinearGradient
+                    colors={["#16a34a", "#22c55e"]}
+                    style={styles.button}
+                >
+                    <Text style={styles.buttonText}>
+                        🌾 Ground Analysis
+                    </Text>
+                </LinearGradient>
             </TouchableOpacity>
 
-            {/* Go to Satellite */}
-            <TouchableOpacity
-                style={[styles.button, { backgroundColor: "#9333ea" }]}
-                onPress={() => navigation.navigate("Satellite")}
-            >
-                <Text style={styles.buttonText}>Go to Satellite Detection</Text>
+            {/* Satellite Button */}
+            <TouchableOpacity onPress={() => navigation.navigate("Satellite")}>
+                <LinearGradient
+                    colors={["#22c55e", "#4ade80"]}
+                    style={styles.button}
+                >
+                    <Text style={styles.buttonText}>
+                        🛰️ Satellite Detection
+                    </Text>
+                </LinearGradient>
             </TouchableOpacity>
 
         </View>
@@ -33,35 +66,43 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+
     container: {
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
-        backgroundColor: "#eef2ff",
+        backgroundColor: "#ecfdf5",
         padding: 20,
     },
+
     title: {
-        fontSize: 26,
-        fontWeight: "bold",
-        marginBottom: 10,
-        color: "#1e3a8a",
+        fontSize: 32,
+        fontWeight: "700",
+        color: "#065f46",
+        marginBottom: 8,
     },
+
     subtitle: {
         fontSize: 14,
         textAlign: "center",
-        marginBottom: 30,
-        color: "#4b5563",
+        marginBottom: 40,
+        color: "#16a34a",
     },
-    button: {
-        backgroundColor: "#2563eb",
-        padding: 15,
-        borderRadius: 10,
-        width: "100%",
-        marginTop: 10,
-    },
+
+   button: {
+    paddingVertical: 16,  
+    paddingHorizontal: 25, 
+    borderRadius: 16,
+    width: "100%", 
+    marginTop: 15,
+    alignItems: "center",
+    elevation: 5,
+},
+
     buttonText: {
         color: "white",
-        textAlign: "center",
+        fontSize: 16,
         fontWeight: "600",
     },
+
 });

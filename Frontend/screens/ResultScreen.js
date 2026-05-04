@@ -1,11 +1,14 @@
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import MapView, { Marker } from "react-native-maps";
-import * as Speech from 'expo-speech';
+import * as Speech from "expo-speech";
 
 export default function ResultScreen({ route }) {
 
     const { result, location } = route.params || {};
+    const [language, setLanguage] = useState("te"); // default Telugu
 
+    // 🛑 No data
     if (!result || !location) {
         return (
             <View style={styles.center}>
@@ -14,32 +17,97 @@ export default function ResultScreen({ route }) {
         );
     }
 
-    const cyclone = result.prediction || "Unknown";
-    const rain = result.weather?.condition || "Moderate";
+    // 🛑 Backend error
+    if (!result.success) {
+        return (
+            <View style={styles.center}>
+                <Text>{result.message || "Something went wrong"}</Text>
+            </View>
+        );
+    }
 
+    // ✅ Data
+    const cyclone = result.prediction || "Unknown";
+    const weather = result.weather || {};
+
+    const rainChance = result.rainChance || "Unknown";
+    const riskLevel = result.riskLevel || "Unknown";
+
+    const weatherCondition = weather.condition || "Unknown";
+    const wind = weather.windSpeed ?? "N/A";
+    const humidity = weather.humidity ?? "N/A";
+    const pressure = weather.pressure ?? "N/A";
+    const confidence = result.confidence ?? "N/A";
+
+    const windText = wind !== "N/A" ? wind : "not available";
+
+    // 🎯 Risk color
     const getRiskColor = (risk) => {
         if (!risk) return "#16a34a";
-
-        if (risk.toLowerCase().includes("cyclone")) return "#dc2626";
-        if (risk.toLowerCase().includes("storm")) return "#ca8a04";
-
+        const r = risk.toLowerCase();
+        if (r === "high") return "#dc2626";
+        if (r === "medium") return "#ca8a04";
         return "#16a34a";
     };
 
-    const speak = () => {
-        Speech.speak(`Cyclone risk is ${cyclone}. Rainfall is ${rain}`);
+    // 🔊 Telugu Auto Voice
+    const speakTelugu = () => {
+    Speech.stop(); // reset
+
+    const text = `తుఫాను ప్రమాద స్థాయి ${riskLevel}. 
+    వర్షం వచ్చే అవకాశం ${rainChance}. 
+    వాతావరణం ${weatherCondition}. 
+    గాలి వేగం గంటకు ${windText} కిలోమీటర్లు.`;
+
+    Speech.speak(text, {
+        language: "te-IN",
+        rate: 0.9,
+        pitch: 1,
+    });
+};
+
+    // 🔊 English Voice (Button)
+    const speakEnglish = () => {
+        Speech.stop();
+
+        const text = `Cyclone risk is ${riskLevel}. 
+        Rain chance is ${rainChance}. 
+        Weather is ${weatherCondition}. 
+        Wind speed is ${windText} kilometers per hour.`;
+
+        Speech.speak(text, {
+            language: "en-US",
+            rate: 0.9,
+        });
     };
 
-    return (
-        <ScrollView style={styles.container}>
+    // 🚀 AUTO VOICE ON LOAD (TELUGU)
+useEffect(() => {
+    if (result && location) {
+        const timer = setTimeout(() => {
+            speakTelugu();
+        }, 500);
 
-            {/* 🌿 HEADER */}
+        return () => {
+            clearTimeout(timer); // clear timer
+            Speech.stop();       // 🛑 stop voice when leaving screen
+        };
+    }
+}, [result, location]);
+
+    return (
+        <ScrollView
+            style={styles.container}
+            contentContainerStyle={{ paddingBottom: 40 }}
+        >
+
+            {/* HEADER */}
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>🌿 Cyclone Monitor</Text>
+                <Text style={styles.headerTitle}>Cyclone Monitor</Text>
                 <Text style={styles.headerSub}>Smart Farming Protection</Text>
             </View>
 
-            {/* 🗺️ MAP (FIXED) */}
+            {/* MAP */}
             <View style={styles.mapWrapper}>
                 <MapView
                     style={styles.map}
@@ -50,25 +118,19 @@ export default function ResultScreen({ route }) {
                         longitudeDelta: 0.01,
                     }}
                 >
-                    <Marker
-                        coordinate={{
-                            latitude: location.lat,
-                            longitude: location.lon,
-                        }}
-                    />
+                    <Marker coordinate={{ latitude: location.lat, longitude: location.lon }} />
                 </MapView>
 
-                {/* Overlay Card */}
                 <View style={styles.overlayCard}>
-                    <Text style={styles.overlayText}>📍 Your Farm Location</Text>
+                    <Text style={styles.overlayText}>Your Location</Text>
                 </View>
             </View>
 
-            {/* 🌪️ MAIN STATUS */}
+            {/* 🌪️ RISK */}
             <View style={styles.statusCard}>
-                <Text style={styles.statusTitle}>Cyclone Status</Text>
-                <Text style={[styles.statusValue, { color: getRiskColor(cyclone) }]}>
-                    {cyclone}
+                <Text style={styles.statusTitle}>Cyclone Risk</Text>
+                <Text style={[styles.statusValue, { color: getRiskColor(riskLevel) }]}>
+                    {riskLevel}
                 </Text>
             </View>
 
@@ -76,43 +138,53 @@ export default function ResultScreen({ route }) {
             <View style={styles.grid}>
 
                 <View style={styles.card}>
-                    <Text style={styles.label}>🌧 Rain</Text>
-                    <Text style={styles.value}>{rain}</Text>
+                    <Text style={styles.label}>🌧 Rain Chance</Text>
+                    <Text style={styles.value}>{rainChance}</Text>
                 </View>
 
                 <View style={styles.card}>
-                    <Text style={styles.label}>🤖 Prediction</Text>
-                    <Text style={styles.value}>{result.prediction}</Text>
+                    <Text style={styles.label}>☁️ Cloud Type</Text>
+                    <Text style={styles.value}>{cyclone}</Text>
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.label}>🌦 Weather</Text>
+                    <Text style={styles.value}>{weatherCondition}</Text>
                 </View>
 
                 <View style={styles.card}>
                     <Text style={styles.label}>💨 Wind</Text>
-                    <Text style={styles.value}>{result.weather?.windSpeed || "N/A"}</Text>
-                    <Text style={styles.value}>{result.weather?.humidity || "N/A"}%</Text>
-                    <Text style={styles.value}>{result.weather?.pressure || "N/A"}</Text>
-                    <Text style={styles.value}>{result.confidence || "N/A"}%</Text>
+                    <Text style={styles.value}>
+                        {wind !== "N/A" ? `${wind} km/h` : "N/A"}
+                    </Text>
                 </View>
 
                 <View style={styles.card}>
                     <Text style={styles.label}>💧 Humidity</Text>
-                    <Text style={styles.value}>{result.weather?.humidity}%</Text>
+                    <Text style={styles.value}>
+                        {humidity !== "N/A" ? `${humidity}%` : "N/A"}
+                    </Text>
                 </View>
 
                 <View style={styles.card}>
                     <Text style={styles.label}>🌡 Pressure</Text>
-                    <Text style={styles.value}>{result.weather?.pressure}</Text>
+                    <Text style={styles.value}>
+                        {pressure !== "N/A" ? `${pressure} hPa` : "N/A"}
+                    </Text>
                 </View>
 
                 <View style={styles.card}>
                     <Text style={styles.label}>📊 Confidence</Text>
-                    <Text style={styles.value}>{result.confidence}%</Text>
+                    <Text style={styles.value}>
+                        {confidence !== "N/A" ? `${confidence}%` : "N/A"}
+                    </Text>
                 </View>
 
             </View>
 
-            {/* 🔊 BUTTON */}
-            <TouchableOpacity style={styles.button} onPress={speak}>
-                <Text style={styles.buttonText}>🔊 Voice Alert</Text>
+            {/* 🔊 BUTTON (ENGLISH ONLY) */}
+            <TouchableOpacity style={styles.button} onPress={speakEnglish}>
+                <Text style={styles.buttonText}>🔊 Voice Alert (English)</Text>
             </TouchableOpacity>
 
         </ScrollView>
@@ -120,44 +192,31 @@ export default function ResultScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-
     container: {
         flex: 1,
         backgroundColor: "#ecfdf5",
-        padding: 16
+        padding: 16,
     },
-
     center: {
         flex: 1,
         justifyContent: "center",
-        alignItems: "center"
+        alignItems: "center",
     },
-
-    header: {
-        marginBottom: 15
-    },
-
+    header: { marginBottom: 15 },
     headerTitle: {
         fontSize: 24,
         fontWeight: "bold",
-        color: "#065f46"
+        color: "#065f46",
     },
-
-    headerSub: {
-        color: "#047857"
-    },
+    headerSub: { color: "#047857" },
 
     mapWrapper: {
         height: 200,
         borderRadius: 20,
         overflow: "hidden",
-        marginBottom: 15
+        marginBottom: 15,
     },
-
-    map: {
-        width: "100%",
-        height: "100%"
-    },
+    map: { width: "100%", height: "100%" },
 
     overlayCard: {
         position: "absolute",
@@ -165,36 +224,28 @@ const styles = StyleSheet.create({
         left: 10,
         backgroundColor: "#ffffffcc",
         padding: 6,
-        borderRadius: 10
+        borderRadius: 10,
     },
-
-    overlayText: {
-        fontSize: 12,
-        color: "#065f46"
-    },
+    overlayText: { fontSize: 12, color: "#065f46" },
 
     statusCard: {
         backgroundColor: "#d1fae5",
         padding: 18,
         borderRadius: 16,
         alignItems: "center",
-        marginBottom: 15
+        marginBottom: 15,
     },
-
-    statusTitle: {
-        color: "#047857"
-    },
-
+    statusTitle: { color: "#047857" },
     statusValue: {
         fontSize: 26,
         fontWeight: "bold",
-        marginTop: 5
+        marginTop: 5,
     },
 
     grid: {
         flexDirection: "row",
         flexWrap: "wrap",
-        justifyContent: "space-between"
+        justifyContent: "space-between",
     },
 
     card: {
@@ -203,31 +254,26 @@ const styles = StyleSheet.create({
         padding: 14,
         borderRadius: 14,
         marginBottom: 10,
-        elevation: 2
+        elevation: 2,
     },
 
-    label: {
-        color: "#065f46",
-        fontSize: 12
-    },
-
+    label: { color: "#065f46", fontSize: 12 },
     value: {
         fontSize: 16,
         fontWeight: "bold",
-        marginTop: 5
+        marginTop: 5,
     },
 
     button: {
         backgroundColor: "#16a34a",
         padding: 15,
         borderRadius: 14,
-        marginTop: 15
+        marginTop: 20,
     },
 
     buttonText: {
         color: "#fff",
         textAlign: "center",
-        fontWeight: "bold"
-    }
-
+        fontWeight: "bold",
+    },
 });
