@@ -17,7 +17,7 @@ CORS(app)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # =========================
-# 🔥 FIXED DOWNLOAD FUNCTION
+# 🔥 DOWNLOAD FUNCTION (FIXED)
 # =========================
 def download_file(url, filename):
     filepath = os.path.join(BASE_DIR, filename)
@@ -25,34 +25,45 @@ def download_file(url, filename):
     if not os.path.exists(filepath):
         print(f"⬇ Downloading {filename}...")
 
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=60)
 
         if response.status_code != 200:
-            raise Exception(f"Download failed: {filename}")
+            raise Exception(f"❌ Download failed: {filename}")
 
         with open(filepath, "wb") as f:
             for chunk in response.iter_content(1024):
                 if chunk:
                     f.write(chunk)
 
+        # 🔥 Validate file
+        size = os.path.getsize(filepath)
+        print(f"📦 File size: {size}")
+
+        if size < 100000:  # <100KB = invalid
+            os.remove(filepath)
+            raise Exception(f"❌ Invalid file downloaded: {filename}")
+
         print(f"✅ Downloaded {filename}")
 
     return filepath
 
-# =========================
-# 🔥 USE GITHUB RELEASE LINKS
-# =========================
-MODEL_URL = "https://github.com/karthik90100/Cyclone_Detection_Mobile_App/releases/download/v1/cyclone_detection_model.keras?raw=true"
-WEIGHTS_URL = "https://github.com/karthik90100/Cyclone_Detection_Mobile_App/releases/download/v1/cloud.weights.h5?raw=true"
 
 # =========================
-# GLOBAL FLAGS
+# 🔥 MODEL URLS (CORRECT)
+# =========================
+MODEL_URL = "https://github.com/karthik90100/Cyclone_Detection_Mobile_App/releases/download/v1/cyclone_detection_model.keras"
+WEIGHTS_URL = "https://github.com/karthik90100/Cyclone_Detection_Mobile_App/releases/download/v1/cloud.weights.h5"
+
+
+# =========================
+# GLOBAL MODELS
 # =========================
 satellite_model = None
 cloud_model_loaded = False
 
+
 # =========================
-# CLOUD MODEL
+# CLOUD MODEL ARCHITECTURE
 # =========================
 cloud_model = Sequential([
     Input(shape=(224, 224, 3)),
@@ -67,8 +78,9 @@ cloud_model = Sequential([
     Dense(5, activation='softmax')
 ])
 
+
 # =========================
-# WEATHER
+# WEATHER API
 # =========================
 def get_weather(lat, lon):
     API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -98,8 +110,9 @@ def get_weather(lat, lon):
         print("Weather Error:", str(e))
         return None
 
+
 # =========================
-# LOGIC
+# LOGIC FUNCTIONS
 # =========================
 def calculate_risk(prediction, wind, humidity):
     if "dark" in prediction or "pattern" in prediction:
@@ -111,6 +124,7 @@ def calculate_risk(prediction, wind, humidity):
     if humidity and humidity > 80:
         return "High"
     return "Low"
+
 
 def calculate_rain_chance(condition, humidity):
     if not condition:
@@ -124,15 +138,17 @@ def calculate_rain_chance(condition, humidity):
         return "Medium"
     return "Low"
 
+
 # =========================
-# HOME
+# HOME ROUTE
 # =========================
 @app.route("/")
 def home():
     return "🚀 Server Running"
 
+
 # =========================
-# PREDICT
+# CLOUD PREDICTION
 # =========================
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -148,12 +164,18 @@ def predict():
 
         lat, lon = float(lat), float(lon)
 
-        # 🔥 Lazy load weights
+        # 🔥 Load weights once
         if not cloud_model_loaded:
             print("🔄 Loading cloud model...")
             weights_path = download_file(WEIGHTS_URL, "cloud.weights.h5")
+
+            print("📦 Checking weights...")
+            print("Exists:", os.path.exists(weights_path))
+            print("Size:", os.path.getsize(weights_path))
+
             cloud_model.load_weights(weights_path)
             cloud_model_loaded = True
+            print("✅ Cloud model ready")
 
         img = Image.open(file).convert("RGB").resize((224,224))
         img_array = np.array(img) / 255.0
@@ -183,11 +205,12 @@ def predict():
         })
 
     except Exception as e:
-        print("❌ FULL ERROR:", str(e))
+        print("❌ ERROR:", str(e))
         return jsonify({"success": False, "message": str(e)})
 
+
 # =========================
-# SATELLITE
+# SATELLITE PREDICTION
 # =========================
 @app.route("/satellite", methods=["POST"])
 def satellite():
@@ -199,11 +222,21 @@ def satellite():
         if not file:
             return jsonify({"success": False, "message": "No file"})
 
-        # 🔥 Lazy load model
+        # 🔥 Load model once
         if satellite_model is None:
             print("🔄 Loading satellite model...")
             model_path = download_file(MODEL_URL, "cyclone_detection_model.keras")
-            satellite_model = tf.keras.models.load_model(model_path)
+
+            print("📦 Checking model...")
+            print("Exists:", os.path.exists(model_path))
+            print("Size:", os.path.getsize(model_path))
+
+            try:
+                satellite_model = tf.keras.models.load_model(model_path)
+                print("✅ Satellite model loaded")
+            except Exception as e:
+                print("❌ Model load failed:", str(e))
+                raise e
 
         img = Image.open(file).convert("RGB").resize((150,150))
         img_array = np.array(img) / 255.0
@@ -221,8 +254,9 @@ def satellite():
         print("❌ SAT ERROR:", str(e))
         return jsonify({"success": False, "message": str(e)})
 
+
 # =========================
-# RUN LOCAL
+# RUN
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
