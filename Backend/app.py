@@ -14,15 +14,13 @@ tf.config.set_visible_devices([], 'GPU')
 app = Flask(__name__)
 CORS(app)
 
-print("🚀 Loading models...")
-
 # =========================
 # 📁 BASE DIRECTORY
 # =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # =========================
-# ⬇️ DOWNLOAD FUNCTION
+# ⬇️ DOWNLOAD FUNCTION (FIXED)
 # =========================
 def download_file(url, filename):
     filepath = os.path.join(BASE_DIR, filename)
@@ -58,13 +56,16 @@ MODEL_URL = "https://drive.google.com/uc?id=1Vw3wiyGVLWAJYbUBFcuFZ_Mu4B2UfZ6k"
 WEIGHTS_URL = "https://drive.google.com/uc?id=1cI6MyyUXhz14jNavYqQQdoSeRYKhHWHb"
 
 # =========================
-# 🛰️ LOAD SATELLITE MODEL
+# ⚡ GLOBAL MODEL FLAGS (IMPORTANT)
 # =========================
-model_path = download_file(MODEL_URL, "cyclone_detection_model.keras")
-satellite_model = tf.keras.models.load_model(model_path)
+model_path = None
+weights_path = None
+
+satellite_model = None
+cloud_model_loaded = False
 
 # =========================
-# ☁️ LOAD CLOUD MODEL
+# ☁️ CLOUD MODEL STRUCTURE
 # =========================
 cloud_model = Sequential([
     Input(shape=(224, 224, 3)),
@@ -82,29 +83,6 @@ cloud_model = Sequential([
     Dense(5, activation='softmax')
 ])
 
-weights_path = download_file(WEIGHTS_URL, "cloud.weights.h5")
-cloud_model.load_weights(weights_path)
-
-print("✅ Models loaded successfully")
-
-# =========================
-# ☁️ IMAGE VALIDATION
-# =========================
-def is_cloud_image(img):
-    img_np = np.array(img)
-
-    brightness = np.mean(img_np)
-    blue_mean = np.mean(img_np[:, :, 2])
-    red_mean = np.mean(img_np[:, :, 0])
-
-    if brightness < 50:
-        return False
-
-    if blue_mean < red_mean:
-        return False
-
-    return True
-
 # =========================
 # 🌦️ WEATHER API
 # =========================
@@ -115,8 +93,6 @@ def get_weather(lat, lon):
 
     try:
         res = requests.get(url, timeout=10)
-
-        print("Status Code:", res.status_code)
 
         if res.status_code != 200:
             return None
@@ -135,7 +111,7 @@ def get_weather(lat, lon):
         return None
 
 # =========================
-# 🧠 RISK CALCULATION (YOUR ORIGINAL)
+# 🧠 RISK LOGIC
 # =========================
 def calculate_risk(prediction, wind, humidity):
     risk = "Low"
@@ -179,6 +155,8 @@ def home():
 # =========================
 @app.route("/predict", methods=["POST"])
 def predict():
+    global cloud_model_loaded, weights_path
+
     try:
         file = request.files.get("file")
         lat = request.form.get("lat")
@@ -187,15 +165,17 @@ def predict():
         if not file or not lat or not lon:
             return jsonify({
                 "success": False,
-                "message": "Missing input",
-                "prediction": None,
-                "confidence": 0,
-                "weather": {},
-                "riskLevel": "Unknown",
-                "rainChance": "Unknown"
+                "message": "Missing input"
             })
 
         lat, lon = float(lat), float(lon)
+
+        # 🔥 Lazy load cloud model
+        if not cloud_model_loaded:
+            print("🔄 Loading cloud model...")
+            weights_path = download_file(WEIGHTS_URL, "cloud.weights.h5")
+            cloud_model.load_weights(weights_path)
+            cloud_model_loaded = True
 
         img = Image.open(file).convert("RGB").resize((224,224))
         img_array = np.array(img) / 255.0
@@ -208,22 +188,15 @@ def predict():
         classes = ['VEIL CLOUDS', 'clear', 'pattern', 'thick dark', 'thick white']
         result = classes[index]
 
-        weather = get_weather(lat, lon)
+        weather = get_weather(lat, lon) or {
+            "windSpeed": 0,
+            "pressure": 0,
+            "humidity": 0,
+            "condition": "Unknown"
+        }
 
-        if not weather:
-            weather = {
-                "windSpeed": 0,
-                "pressure": 0,
-                "humidity": 0,
-                "condition": "Unknown"
-            }
-
-        # ✅ YOUR ORIGINAL LOGIC
         risk = calculate_risk(result, weather["windSpeed"], weather["humidity"])
-        rainChance = calculate_rain_chance(
-            weather["condition"],
-            weather["humidity"]
-        )
+        rainChance = calculate_rain_chance(weather["condition"], weather["humidity"])
 
         return jsonify({
             "success": True,
@@ -236,24 +209,26 @@ def predict():
 
     except Exception as e:
         print("❌ ERROR:", str(e))
-        return jsonify({
-            "success": False,
-            "message": "Server error"
-        })
+        return jsonify({"success": False, "message": "Server error"})
 
 # =========================
 # 🛰️ SATELLITE ROUTE
 # =========================
 @app.route("/satellite", methods=["POST"])
 def satellite():
+    global satellite_model, model_path
+
     try:
         file = request.files.get("file")
 
         if not file:
-            return jsonify({
-                "success": False,
-                "message": "No file provided"
-            })
+            return jsonify({"success": False, "message": "No file provided"})
+
+        # 🔥 Lazy load satellite model
+        if satellite_model is None:
+            print("🔄 Loading satellite model...")
+            model_path = download_file(MODEL_URL, "cyclone_detection_model.keras")
+            satellite_model = tf.keras.models.load_model(model_path)
 
         img = Image.open(file).convert("RGB").resize((150,150))
         img_array = np.array(img) / 255.0
@@ -276,10 +251,7 @@ def satellite():
 
     except Exception as e:
         print("Satellite Error:", str(e))
-        return jsonify({
-            "success": False,
-            "message": "Server error"
-        })
+        return jsonify({"success": False, "message": "Server error"})
 
 # =========================
 # 🚀 RUN (LOCAL ONLY)
