@@ -104,7 +104,7 @@ const detect = async () => {
         console.log("Location:", location);
 
         const res = await fetch(
-            "http://192.168.0.120:5000/predict",
+            "https://cyclone-detection-mobile-app-1.onrender.com/predict",
             {
                 method: "POST",
                 body: formData,

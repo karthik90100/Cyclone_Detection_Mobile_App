@@ -55,7 +55,7 @@ export default function SatelliteScreen() {
             });
 
             const res = await fetch(
-                "http://192.168.0.120:5000/satellite",
+                "https://cyclone-detection-mobile-app-1.onrender.com/satellite",
                 {
                     method: "POST",
                     body: formData,
