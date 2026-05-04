@@ -8,15 +8,51 @@ from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense
 import os
 import requests
 
+# 🔒 Disable GPU (Render safe)
+tf.config.set_visible_devices([], 'GPU')
+
 app = Flask(__name__)
 CORS(app)
 
 print("🚀 Loading models...")
 
 # =========================
+# 📁 BASE DIRECTORY
+# =========================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# =========================
+# ⬇️ DOWNLOAD FUNCTION
+# =========================
+def download_file(url, filename):
+    filepath = os.path.join(BASE_DIR, filename)
+
+    if not os.path.exists(filepath):
+        print(f"⬇ Downloading {filename}...")
+        r = requests.get(url, stream=True)
+
+        if r.status_code != 200:
+            raise Exception(f"Failed to download {filename}")
+
+        with open(filepath, "wb") as f:
+            for chunk in r.iter_content(1024):
+                f.write(chunk)
+
+        print(f"✅ Downloaded {filename}")
+
+    return filepath
+
+# =========================
+# 🔗 MODEL LINKS
+# =========================
+MODEL_URL = "https://drive.google.com/uc?id=1Vw3wiyGVLWAJYbUBFcuFZ_Mu4B2UfZ6k"
+WEIGHTS_URL = "https://drive.google.com/uc?id=1cI6MyyUXhz14jNavYqQQdoSeRYKhHWHb"
+
+# =========================
 # 🛰️ LOAD SATELLITE MODEL
 # =========================
-satellite_model = tf.keras.models.load_model("cyclone_detection_model.keras")
+model_path = download_file(MODEL_URL, "cyclone_detection_model.keras")
+satellite_model = tf.keras.models.load_model(model_path)
 
 # =========================
 # ☁️ LOAD CLOUD MODEL
@@ -37,7 +73,8 @@ cloud_model = Sequential([
     Dense(5, activation='softmax')
 ])
 
-cloud_model.load_weights("cloud.weights.h5")
+weights_path = download_file(WEIGHTS_URL, "cloud.weights.h5")
+cloud_model.load_weights(weights_path)
 
 print("✅ Models loaded successfully")
 
@@ -63,25 +100,22 @@ def is_cloud_image(img):
 # 🌦️ WEATHER API
 # =========================
 def get_weather(lat, lon):
-    API_KEY = "8bfb8223a3b94f6137c3b569e06ddda0"   # 🔥 paste your key directly here
+    API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
 
     try:
         res = requests.get(url, timeout=10)
 
-       
-        # ✅ CORRECT PLACE (AFTER res is created)
         print("Status Code:", res.status_code)
-        print("Response:", res.text)
+
         if res.status_code != 200:
             return None
 
         data = res.json()
-        
 
         return {
-            "windSpeed": data["wind"]["speed"] * 3.6,  # convert m/s → km/h
+            "windSpeed": data["wind"]["speed"] * 3.6,
             "pressure": data["main"]["pressure"],
             "humidity": data["main"]["humidity"],
             "condition": data["weather"][0]["main"]
@@ -92,7 +126,7 @@ def get_weather(lat, lon):
         return None
 
 # =========================
-# 🧠 RISK CALCULATION
+# 🧠 RISK CALCULATION (YOUR ORIGINAL)
 # =========================
 def calculate_risk(prediction, wind, humidity):
     risk = "Low"
@@ -141,7 +175,6 @@ def predict():
         lat = request.form.get("lat")
         lon = request.form.get("lon")
 
-        # ❌ Missing input
         if not file or not lat or not lon:
             return jsonify({
                 "success": False,
@@ -155,10 +188,7 @@ def predict():
 
         lat, lon = float(lat), float(lon)
 
-        # 📷 Process image
         img = Image.open(file).convert("RGB").resize((224,224))
-
-        # 🤖 Model prediction
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
@@ -169,11 +199,9 @@ def predict():
         classes = ['VEIL CLOUDS', 'clear', 'pattern', 'thick dark', 'thick white']
         result = classes[index]
 
-        # 🌦 Weather
         weather = get_weather(lat, lon)
 
         if not weather:
-            print("⚠️ Weather API failed")
             weather = {
                 "windSpeed": 0,
                 "pressure": 0,
@@ -181,45 +209,13 @@ def predict():
                 "condition": "Unknown"
             }
 
-        # 🌪️ WIND-BASED CYCLONE RISK
-        def calculate_risk_wind_only(wind):
-            if wind is None:
-                return "Unknown"
-
-            if wind >= 120:
-                return "Very High"
-            elif wind >= 90:
-                return "High"
-            elif wind >= 60:
-                return "Medium"
-            elif wind >= 30:
-                return "Low"
-            else:
-                return "Very Low"
-
-        # 🌧️ RAIN CHANCE
-        def calculate_rain_chance(condition, humidity):
-            if not condition:
-                return "Unknown"
-
-            condition = condition.lower()
-
-            if "rain" in condition or "storm" in condition:
-                return "High"
-
-            if humidity > 70:
-                return "Medium"
-
-            return "Low"
-
-        # ✅ Apply logic
-        risk = calculate_risk_wind_only(weather["windSpeed"])
+        # ✅ YOUR ORIGINAL LOGIC
+        risk = calculate_risk(result, weather["windSpeed"], weather["humidity"])
         rainChance = calculate_rain_chance(
             weather["condition"],
             weather["humidity"]
         )
 
-        # ✅ Final response
         return jsonify({
             "success": True,
             "prediction": result,
@@ -233,15 +229,10 @@ def predict():
         print("❌ ERROR:", str(e))
         return jsonify({
             "success": False,
-            "message": "Server error",
-            "prediction": None,
-            "confidence": 0,
-            "weather": {},
-            "riskLevel": "Unknown",
-            "rainChance": "Unknown"
+            "message": "Server error"
         })
-    
-    # =========================
+
+# =========================
 # 🛰️ SATELLITE ROUTE
 # =========================
 @app.route("/satellite", methods=["POST"])
@@ -255,16 +246,12 @@ def satellite():
                 "message": "No file provided"
             })
 
-        # 📷 Process image (IMPORTANT: correct size)
         img = Image.open(file).convert("RGB").resize((150,150))
-
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
-        # 🤖 Model prediction
         prediction = float(satellite_model.predict(img_array, verbose=0)[0][0])
 
-        # 🎯 Result logic
         if prediction < 0.5:
             result = "Cyclone Detected"
             confidence = (1 - prediction) * 100
@@ -284,10 +271,9 @@ def satellite():
             "success": False,
             "message": "Server error"
         })
-        
 
 # =========================
-# 🚀 RUN
+# 🚀 RUN (LOCAL ONLY)
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
